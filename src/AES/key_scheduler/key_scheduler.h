@@ -19,6 +19,11 @@ class KeyScheduler{
     void rot_word(std::vector<uint8_t> &word);
     void sub_word(std::vector<uint8_t> &word);
     void op_rcon(std::vector<uint8_t> &word);
+    void emplace(
+        std::vector<uint8_t> &last_col,
+        std::vector<std::vector<uint8_t>> &expanded_key,
+        int end_pos
+    );
 };
 
 

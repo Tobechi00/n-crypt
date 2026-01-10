@@ -1,7 +1,9 @@
 #include "aes_encryption.h"
 #include "src/AES/key_scheduler/key_scheduler.h"
 #include "src/util/util.h"
+#include <cmath>
 #include <cstdint>
+#include <filesystem>
 #include <fstream>
 #include <iostream>
 #include <map>
@@ -19,31 +21,53 @@ const std::vector<std::vector<uint8_t>> AesEncryption::galois_field = {
     {0x03, 0x01, 0x01, 0x02}
 };
 
-AesEncryption::AesEncryption(std::string file_name, std::string user_key){
-    std::ifstream file_stream(file_name);
+AesEncryption::AesEncryption(std::string file_path, std::string user_key){
+    std::ifstream raw_file(file_path);
+
+    std::filesystem::path p = file_path;
+
+    std::ofstream encr_file(util::generate_out_path(file_path));
 
 
     //file is empty??
-    if(!file_stream.is_open()){
-        std::cout << "error occurred while opening file";
+    if(!raw_file.is_open()){
+        std::cerr << "error occurred while opening file" << "\n";
+        return;
+    }
+
+    if(!encr_file.is_open()){
+        std::cerr << "couldn't generate output folder" << "\n";
         return;
     }
 
     int length = user_key.length();
 
-    int aes_version =
-    (length == 16) ? 16 :
-    (length == 24) ? 24 :
-    (length == 32) ? 32 : -1;
+    int aes_version = 0;
+    int num_rounds = 0;
 
-    int num_rounds =
-    (aes_version == 16) ? 10 :
-    (aes_version == 24) ? 12 :
-    (aes_version == 32) ? 14 : -1;
+    //len(key)/4+6
+    switch (length) {
+        case 16:{
+            aes_version = 16;
+            num_rounds = 10;
+            break;
+        }
+        case 24:{
+            aes_version = 24;
+            num_rounds = 12;
+            break;
+        }
 
-    if(aes_version == -1){
-        //err
-        return;
+        case 32:{
+            aes_version = 32;
+            num_rounds = 14;
+            break;
+        }
+
+        default:{
+            std::cerr << "invalid key length";
+            return;
+        }
     }
 
     //use PKCS#7 to pad block if not enough bytes
@@ -60,9 +84,9 @@ AesEncryption::AesEncryption(std::string file_name, std::string user_key){
 	//read and arrange 16 byte chunks of data into matrixes
     char block[16];
 
-    while(file_stream.read(block, 16)){
-        //read and organise block into matrix;
-        int bytes_read = file_stream.gcount();
+    while(raw_file.read(block, 16)){
+        // read and organise block into matrix;
+        int bytes_read = raw_file.gcount();
 
         char state[4][4];
 
@@ -102,79 +126,74 @@ AesEncryption::AesEncryption(std::string file_name, std::string user_key){
             }
         }
 
-        //start encryption
+        // start encryption
         int round_ctr = 0;
 
-        while(round_ctr <= num_rounds){//start rounds
+        for(int round = 0; round <= num_rounds; round++){
 
-            if(round_ctr == 0){//initial round
-                add_round_key(state, expanded_key, k_end_pos);//only add round key
+            if(round == 0){//first round
+                add_round_key(state, expanded_key, k_end_pos);
                 continue;
-            }else if(round_ctr == num_rounds){//final round;
+            }else if(round == num_rounds){//last round
                 sub_bytes(state);
                 shift_rows(state);
-                continue;
-            }
+                add_round_key(state, expanded_key, k_end_pos);
+                break;
+            }else{
+                sub_bytes(state);
+                shift_rows(state);
 
-            //rounds 1 - 9
-            sub_bytes(state);
+                uint8_t mix_state[4][4];// holds state after mix_column op
 
-            //shift rows
-            shift_rows(state);
+                int col = 0;
+                int row = 0;
 
+                for(int st_col = 0; st_col < 4; st_col++){
+                        for(int gf_row = 0; gf_row < 4; gf_row++){
+                            uint8_t res = 0x00; //result
 
-            //mix columns with galois field
-            uint8_t mix_state[4][4];// holds state after mix_column op
+                            for(int gf_col = 0; gf_col < 4; gf_col++){
 
-            int col = 0;
-            int row = 0;
+                                int st_row = gf_col;
 
-            for(int st_col = 0; st_col < 4; st_col++){
-                    for(int gf_row = 0; gf_row < 4; gf_row++){
-                        uint8_t res = 0x00; //result
+                                res = res ^ mix_col(galois_field[gf_row][gf_col], state[st_row][st_col]);
+                            }
 
-                        for(int gf_col = 0; gf_col < 4; gf_col++){
+                            mix_state[row][col] = res;
+                            // std::cout << row << " -- " << col << "\n";
 
-                            int st_row = gf_col;
-
-                            res = res ^ mix_col(galois_field[gf_row][gf_col], state[st_row][st_col]);
+                            if(row == 3){
+                                row = 0;
+                                col++;
+                            }else{
+                                row++;
+                            }
                         }
-
-                        mix_state[row][col] = res;
-                        // std::cout << row << " -- " << col << "\n";
-
-                        if(row == 3){
-                            row = 0;
-                            col++;
-                        }else{
-                            row++;
-                        }
-                    }
-            }
-
-            for(int row = 0; row < 4; row++){//return mix col result back to state
-                for(int col = 0; col < 4; col++){
-                    state[row][col] = mix_state[row][col];
                 }
+
+                for(int row = 0; row < 4; row++){//return mix col result back to state
+                    for(int col = 0; col < 4; col++){
+                        state[row][col] = mix_state[row][col];
+                    }
+                }
+
+                add_round_key(state, expanded_key, k_end_pos);
             }
+        }
 
-            add_round_key(state, expanded_key, k_end_pos);
+        //state test
+        //sample key: mNpQ2zR8xV4kL7aB9jY5sT1w
+        for(int row = 0; row < 4; row++){
 
-            round_ctr++;
-            //add round key (or mixed state with expanded key)
-            //xor state key with round key
-            //first stage round key will be the initial key
-            //remaining keys are generated by performing (rotword, subword and rconn(round constant)) then xoring with values from initial key
-    }
-
-
-    }
-
-
+            for(int col = 0; col < 4; col++){
+                std::cout << state[row][col] <<", ";
+            }
+            std::cout << "\n";
+        }
 
 }
 
-
+}
 
 
 
@@ -275,11 +294,12 @@ void AesEncryption::shift_rows(char state[4][4]){
     state[3][3] = trd;
 }
 
-void AesEncryption::add_round_key(char mix_state[4][4], const std::vector<std::vector<uint8_t>> expanded_key, int &k_end_pos){
+//here
+void AesEncryption::add_round_key(char mix_state[4][4], const std::vector<std::vector<uint8_t>> &expanded_key, int &k_end_pos){
     for(int row = 0; row < 4; row++){
         for(int col = 0; col < 4; col++){
             mix_state[row][col] =
-                mix_state[row][col] ^ expanded_key[k_end_pos + row][k_end_pos + col];
+                mix_state[row][col] ^ expanded_key[row][k_end_pos + col];
         }
     }
 

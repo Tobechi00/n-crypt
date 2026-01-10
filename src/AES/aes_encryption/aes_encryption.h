@@ -11,7 +11,7 @@ class AesEncryption{
     static const std::vector<std::vector<uint8_t>> galois_field;//4x4
 
     public:
-    AesEncryption(std::string file_name, std::string user_key);
+    AesEncryption(std::string file_path, std::string user_key);
 
     private:
     uint8_t mix_col(uint8_t field_val, uint8_t state_val);
@@ -20,7 +20,7 @@ class AesEncryption{
 
     uint8_t rot_word(uint8_t val);
 
-    void add_round_key(char arr[4][4], const std::vector<std::vector<uint8_t>> expanded_key, int &k_end_pos);
+    void add_round_key(char arr[4][4], const std::vector<std::vector<uint8_t>> &expanded_key, int &k_end_pos);
 
     void sub_bytes(char state[4][4]);
 

@@ -1,6 +1,8 @@
 #include "src/util/util.h"
 #include <cmath>
 #include <cstdint>
+#include <filesystem>
+#include <fstream>
 
 namespace util{
 
@@ -30,6 +32,24 @@ namespace util{
         int lower_nibble = static_cast<int>(val & 0x0F);
 
         return {upper_nibble, lower_nibble};
+    }
+
+    //permissions checking??
+    bool is_file_valid(std::string file_path){
+        std::ifstream file(file_path);
+
+        if(file.good()){
+            return true;
+        }
+
+        return false;
+    }
+
+    std::filesystem::path generate_out_path(std::string in_file_path){
+        std::filesystem::path fp = in_file_path;
+        fp.replace_extension(".aes");
+
+        return fp;
     }
 
 
