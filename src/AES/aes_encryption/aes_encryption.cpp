@@ -7,11 +7,13 @@
 #include <fstream>
 #include <iostream>
 #include <map>
+#include <utility>
 #include <vector>
 
 //r1 - initial round key addition //first key is unedited the users pure secret key
 //r9, 11 or 13 - subbytes, shift rows, mix columns add round key
 //rfinal - subbytes shitrows addround key
+//sample key: mNpQ2zR8xV4kL7aB9jY5sT1w
 const std::vector<int>AesEncryption::poly_rs_8 = {4, 3, 1, 0};
 
 const std::vector<std::vector<uint8_t>> AesEncryption::galois_field = {
@@ -22,7 +24,7 @@ const std::vector<std::vector<uint8_t>> AesEncryption::galois_field = {
 };
 
 AesEncryption::AesEncryption(std::string file_path, std::string user_key){
-    std::ifstream raw_file(file_path);
+    std::ifstream raw_file(file_path, std::ios::binary);
 
     std::filesystem::path p = file_path;
 
@@ -65,10 +67,14 @@ AesEncryption::AesEncryption(std::string file_path, std::string user_key){
         }
 
         default:{
-            std::cerr << "invalid key length";
+            std::cerr << "invalid key length" << "\n";
             return;
         }
     }
+
+    //TODO
+    //fix buffer, extra text being appended at end and incorrect text on file
+    // check pkcs algo
 
     //use PKCS#7 to pad block if not enough bytes
     // padding is determined based on the number of unfilled bytes (ie if 9 bytes 0x09)
@@ -79,119 +85,141 @@ AesEncryption::AesEncryption(std::string file_path, std::string user_key){
    	KeyScheduler key_sch(user_key, aes_version);
 	std::vector<std::vector<uint8_t>> expanded_key = key_sch.get_expanded_key();
 
-	int k_end_pos = 0;//(key end position) is incremented by 4
+	std::vector<std::vector<uint8_t>> crypt_buffer(4);
 
 	//read and arrange 16 byte chunks of data into matrixes
-    char block[16];
+    // char block[16];
 
-    while(raw_file.read(block, 16)){
-        // read and organise block into matrix;
+    while(raw_file.good()){//edit
+
+        char buff[util::CHBUF_SIZ];
+
+        raw_file.read(buff, util::CHBUF_SIZ);
+        // raw_file.read(block, 16);
+
         int bytes_read = raw_file.gcount();
 
         char state[4][4];
+        int ctr = 0;
 
-        int block_ctr = 0;
-        int last_col = 0;
-        int last_row;
+        while(ctr < bytes_read){
 
-        //fill state with block value
-        for(int row = 0; row < 4; row++){
-            for(int col = 0; col < 4; col++){
+            std::pair<int, int> row_col_pair;
 
-                if(block_ctr == bytes_read){//save stop position
-                    last_col = col;
-                    last_row = row;
-                    break;
-                }
+            int rem = bytes_read - ctr;
 
-                state[row][col] = block[block_ctr];
+            if(rem >= 16){
+                char* beg = &buff[ctr];
+                char* end = &buff[ctr + 15];
+                ctr += 16;
 
-                block_ctr++;
-            }
+                row_col_pair = populate_state(state, beg, end, 16);
+            }else if(rem > 0 && rem < 16){
 
-            //if read up to number of bytes read
-            if(block_ctr == bytes_read){
-                break;
-            }
-        }
+                char* beg = &buff[ctr];
+                char* end = &buff[ctr + rem];
 
-        uint8_t rem_bytes = static_cast<uint8_t>(16 - bytes_read);//0x0rembytes;
+                row_col_pair = populate_state(state, beg, end, rem);
 
-        //pad if not exactly 16 bytes using PKCS#7
-        if(rem_bytes > 0){
-            for(int row = last_row; row < 4; row++){
-                for(int col = last_col; col < 4; col++){
-                    state[row][col] = rem_bytes;
-                }
-            }
-        }
+                //fill state with block
+                pad_pkcs_7(
+                    state, row_col_pair.first,
+                    row_col_pair.second, rem);
+                ctr = bytes_read;//end
 
-        // start encryption
-        int round_ctr = 0;
-
-        for(int round = 0; round <= num_rounds; round++){
-
-            if(round == 0){//first round
-                add_round_key(state, expanded_key, k_end_pos);
-                continue;
-            }else if(round == num_rounds){//last round
-                sub_bytes(state);
-                shift_rows(state);
-                add_round_key(state, expanded_key, k_end_pos);
-                break;
-            }else{
-                sub_bytes(state);
-                shift_rows(state);
-
-                uint8_t mix_state[4][4];// holds state after mix_column op
-
-                int col = 0;
-                int row = 0;
-
-                for(int st_col = 0; st_col < 4; st_col++){
-                        for(int gf_row = 0; gf_row < 4; gf_row++){
-                            uint8_t res = 0x00; //result
-
-                            for(int gf_col = 0; gf_col < 4; gf_col++){
-
-                                int st_row = gf_col;
-
-                                res = res ^ mix_col(galois_field[gf_row][gf_col], state[st_row][st_col]);
-                            }
-
-                            mix_state[row][col] = res;
-                            // std::cout << row << " -- " << col << "\n";
-
-                            if(row == 3){
-                                row = 0;
-                                col++;
-                            }else{
-                                row++;
-                            }
-                        }
-                }
-
-                for(int row = 0; row < 4; row++){//return mix col result back to state
+                // state test
+                for(int row = 0; row < 4; row++){
+                    std::cout <<"[";
                     for(int col = 0; col < 4; col++){
-                        state[row][col] = mix_state[row][col];
+                        std::cout << state[row][col] <<", ";
                     }
+                    std::cout << "]";
+                    std::cout << "\n";
                 }
-
-                add_round_key(state, expanded_key, k_end_pos);
+            }else{
+                break;
             }
+
+
+
+
+             // start encryption
+            int round_ctr = 0;
+            int k_end_pos = 0;//(key end position) is incremented by 4
+
+            for(int round = 0; round <= num_rounds; round++){
+
+                if(round == 0){//first round
+                    add_round_key(state, expanded_key, k_end_pos);
+
+                    continue;
+                }else if(round == num_rounds){//last round
+                    sub_bytes(state);
+                    shift_rows(state);
+                    add_round_key(state, expanded_key, k_end_pos);
+
+                    break;
+                }else{
+                    sub_bytes(state);
+                    shift_rows(state);
+
+                    uint8_t mix_state[4][4];// holds state after mix_column op
+
+                    int col = 0;
+                    int row = 0;
+
+                    for(int st_col = 0; st_col < 4; st_col++){
+                            for(int gf_row = 0; gf_row < 4; gf_row++){
+                                uint8_t res = 0x00; //result
+
+                                for(int gf_col = 0; gf_col < 4; gf_col++){
+
+                                    int st_row = gf_col;
+
+                                    res = res ^ mix_col(galois_field[gf_row][gf_col], state[st_row][st_col]);
+                                }
+
+                                mix_state[row][col] = res;
+
+                                if(row == 3){
+                                    row = 0;
+                                    col++;
+                                }else{
+                                    row++;
+                                }
+                            }
+                    }
+
+                    for(int row = 0; row < 4; row++){//return mix col result back to state
+                        for(int col = 0; col < 4; col++){
+                            state[row][col] = mix_state[row][col];
+                        }
+                    }
+
+                    add_round_key(state, expanded_key, k_end_pos);
+                }
         }
 
-        //state test
-        //sample key: mNpQ2zR8xV4kL7aB9jY5sT1w
-        for(int row = 0; row < 4; row++){
 
-            for(int col = 0; col < 4; col++){
-                std::cout << state[row][col] <<", ";
-            }
-            std::cout << "\n";
+        }
+
+        push_to_buffer(state, crypt_buffer);
+
+        int buffer_size = crypt_buffer.size() * crypt_buffer[0].size();
+
+        if(buffer_size == util::CHBUF_SIZ){//flush buffer if full
+            util::flush_buffer(crypt_buffer, encr_file);
         }
 
 }
+
+
+    if(!crypt_buffer.empty()){
+        util::flush_buffer(crypt_buffer, encr_file);//flush buffer one final time to clear reminants
+    }
+
+    raw_file.close();
+    encr_file.close();
 
 }
 
@@ -296,6 +324,7 @@ void AesEncryption::shift_rows(char state[4][4]){
 
 //here
 void AesEncryption::add_round_key(char mix_state[4][4], const std::vector<std::vector<uint8_t>> &expanded_key, int &k_end_pos){
+
     for(int row = 0; row < 4; row++){
         for(int col = 0; col < 4; col++){
             mix_state[row][col] =
@@ -313,6 +342,53 @@ void AesEncryption::sub_bytes(char state[4][4]){
             std::pair<uint8_t, uint8_t> row_col_pair = util::separate(state[row][col]);
             //populate state with sbox mapped values
             state[row][col] = util::s_box[row_col_pair.first][row_col_pair.second];
+        }
+    }
+}
+
+void AesEncryption::push_to_buffer(char state[4][4], std::vector<std::vector<uint8_t>> &buffer){
+    for(int col = 0; col < 4; col++){
+
+        for(int row = 0; row < 4; row++){
+            buffer[row].push_back(state[row][col]);
+        }
+    }
+}
+
+std::pair<int, int> AesEncryption::populate_state(char state[4][4], char *begin, char *end, int bytes_read){
+
+    int last_col = 0;
+    int last_row = 0;
+    bool flag = false;
+
+    for(int col = 0; col < 4; col++){
+        for(int row = 0; row < 4; row++){
+
+            if (flag == true) {
+                last_col = col;
+                last_row = row;
+                break;
+            }
+
+
+            if(begin == end){//save stop position
+                flag = true;
+            }
+
+            state[row][col] = *begin;
+
+            begin++;
+        }
+    }
+
+    return {last_row, last_col};
+}
+
+
+void AesEncryption::pad_pkcs_7(char state[4][4], int last_row_pos, int last_col_pos, int rem_bytes){
+    for(int row = last_row_pos; row < 4; row++){
+        for(int col = last_col_pos; col < 4; col++){
+            state[row][col] = rem_bytes;
         }
     }
 }

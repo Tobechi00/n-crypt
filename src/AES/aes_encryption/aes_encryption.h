@@ -24,6 +24,12 @@ class AesEncryption{
 
     void sub_bytes(char state[4][4]);
 
+    void push_to_buffer(char state[4][4], std::vector<std::vector<uint8_t>> &buffer);
+
+    std::pair<int, int> populate_state(char state[4][4], char *begin, char *end, int bytes_read);
+
+    void pad_pkcs_7(char state[4][4], int last_row_pos, int last_col_pos, int rem_bytes);
+
 };
 
 #endif

@@ -3,6 +3,7 @@
 #include <cstdint>
 #include <filesystem>
 #include <fstream>
+#include <vector>
 
 namespace util{
 
@@ -50,6 +51,22 @@ namespace util{
         fp.replace_extension(".aes");
 
         return fp;
+    }
+
+    void flush_buffer(std::vector<std::vector<uint8_t>> buffer, std::ofstream &file){
+        //read in column major order but arrange each from top to bottom
+        std::string content;
+
+        for(int col = 0; col < buffer[0].size(); col++){
+
+            for(int row = 0; row < 4; row++){
+                content.push_back(buffer[row][col]);
+            }
+        }
+
+
+        buffer.clear();
+        file << content;
     }
 
 
