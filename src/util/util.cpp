@@ -3,6 +3,7 @@
 #include <cstdint>
 #include <filesystem>
 #include <fstream>
+#include <iostream>
 #include <vector>
 
 namespace util{
@@ -53,7 +54,7 @@ namespace util{
         return fp;
     }
 
-    void flush_buffer(std::vector<std::vector<uint8_t>> buffer, std::ofstream &file){
+    void flush_buffer(std::vector<std::vector<uint8_t>> &buffer, std::ofstream &file){
         //read in column major order but arrange each from top to bottom
         std::string content;
 
@@ -64,8 +65,9 @@ namespace util{
             }
         }
 
+        std::vector<std::vector<uint8_t>> temp(4);
+        buffer = temp;
 
-        buffer.clear();
         file << content;
     }
 

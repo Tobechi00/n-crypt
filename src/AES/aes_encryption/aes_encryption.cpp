@@ -75,7 +75,7 @@ AesEncryption::AesEncryption(std::string file_path, std::string user_key){
     //TODO
     //fix buffer, extra text being appended at end and incorrect text on file
     // check pkcs algo
-
+    // values read should be reflected on output file in the same order
     //use PKCS#7 to pad block if not enough bytes
     // padding is determined based on the number of unfilled bytes (ie if 9 bytes 0x09)
 
@@ -92,10 +92,10 @@ AesEncryption::AesEncryption(std::string file_path, std::string user_key){
 
     while(raw_file.good()){//edit
 
+        //read block
         char buff[util::CHBUF_SIZ];
 
         raw_file.read(buff, util::CHBUF_SIZ);
-        // raw_file.read(block, 16);
 
         int bytes_read = raw_file.gcount();
 
@@ -103,6 +103,7 @@ AesEncryption::AesEncryption(std::string file_path, std::string user_key){
         int ctr = 0;
 
         while(ctr < bytes_read){
+            reset_state(state);
 
             std::pair<int, int> row_col_pair;
 
@@ -126,20 +127,7 @@ AesEncryption::AesEncryption(std::string file_path, std::string user_key){
                     state, row_col_pair.first,
                     row_col_pair.second, rem);
                 ctr = bytes_read;//end
-
-                // state test
-                for(int row = 0; row < 4; row++){
-                    std::cout <<"[";
-                    for(int col = 0; col < 4; col++){
-                        std::cout << state[row][col] <<", ";
-                    }
-                    std::cout << "]";
-                    std::cout << "\n";
-                }
-            }else{
-                break;
             }
-
 
 
 
@@ -200,9 +188,6 @@ AesEncryption::AesEncryption(std::string file_path, std::string user_key){
                 }
         }
 
-
-        }
-
         push_to_buffer(state, crypt_buffer);
 
         int buffer_size = crypt_buffer.size() * crypt_buffer[0].size();
@@ -211,12 +196,15 @@ AesEncryption::AesEncryption(std::string file_path, std::string user_key){
             util::flush_buffer(crypt_buffer, encr_file);
         }
 
+    }
+
+        //e at the end of file for some reason
+        if(!crypt_buffer.empty()){
+            util::flush_buffer(crypt_buffer, encr_file);//flush buffer one final time to clear reminants
+        }
+
 }
 
-
-    if(!crypt_buffer.empty()){
-        util::flush_buffer(crypt_buffer, encr_file);//flush buffer one final time to clear reminants
-    }
 
     raw_file.close();
     encr_file.close();
@@ -391,4 +379,14 @@ void AesEncryption::pad_pkcs_7(char state[4][4], int last_row_pos, int last_col_
             state[row][col] = rem_bytes;
         }
     }
+}
+
+void AesEncryption::reset_state(char state[4][4]){
+
+    for(int row = 0; row < 4; row++){
+        for(int col = 0; col < 4; col++){
+            state[row][col] = 0x00;
+        }
+    }
+
 }

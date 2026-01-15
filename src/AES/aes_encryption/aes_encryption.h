@@ -30,6 +30,8 @@ class AesEncryption{
 
     void pad_pkcs_7(char state[4][4], int last_row_pos, int last_col_pos, int rem_bytes);
 
+    void reset_state(char state[4][4]);
+
 };
 
 #endif
