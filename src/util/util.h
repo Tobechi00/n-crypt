@@ -19,6 +19,7 @@ namespace util{
 
 
     extern std::pair<uint8_t, uint8_t> separate(uint8_t val);
+    extern uint8_t combine(uint8_t row, uint8_t col);
 }
 
 #endif

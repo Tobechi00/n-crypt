@@ -122,7 +122,7 @@ AesEncryption::AesEncryption(std::string file_path, std::string user_key){
 
                 row_col_pair = populate_state(state, beg, end, rem);
 
-                //fill state with block
+                //pad state if space
                 pad_pkcs_7(
                     state, row_col_pair.first,
                     row_col_pair.second, rem);

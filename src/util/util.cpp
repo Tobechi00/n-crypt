@@ -3,7 +3,6 @@
 #include <cstdint>
 #include <filesystem>
 #include <fstream>
-#include <iostream>
 #include <vector>
 
 namespace util{
@@ -69,6 +68,10 @@ namespace util{
         buffer = temp;
 
         file << content;
+    }
+
+    uint8_t combine(uint8_t row, uint8_t col){
+        return (row << 4) | col;
     }
 
 
