@@ -20,7 +20,7 @@ set(SRCS
     src/AES/aes_encryption/aes_encryption.cpp
     src/AES/key_scheduler/key_scheduler.cpp
     src/main.cpp
-    src/AES/aes_encryption/aes_decryption.cpp
+    src/AES/aes_decryption/aes_decryption.cpp
 )
 
 ## Define the executable

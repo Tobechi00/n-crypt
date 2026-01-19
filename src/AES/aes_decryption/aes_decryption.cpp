@@ -1,39 +1,26 @@
 #include "aes_decryption.h"
 #include <cstdint>
-#include <filesystem>
 #include <fstream>
 #include <iostream>
-#include <map>
+#include <string>
 #include <sys/types.h>
 #include <unordered_map>
+#include <vector>
 #include "src/AES/key_scheduler/key_scheduler.h"
 #include "src/util/util.h"
 
-const std::vector<std::vector<uint8_t>> AesDecryption::inv_mix_col_mat = {
-    {0x0E, 0x0B, 0x0D, 0x09},
-    {0x09, 0x0E, 0x0B, 0x0D},
-    {0x0D, 0x09, 0x0E, 0x0B},
-    {0x0B, 0x0D, 0x09, 0x0E}
-};
 
-const std::vector<int> AesDecryption::poly_rs_8 = {4, 3, 1, 0};
-
-//TODO finish inverse mix and implement reverse rounds
 AesDecryption::AesDecryption(std::string file_path, std::string user_key){
-    std::ifstream raw_file(file_path, std::ios::binary);
+    std::ifstream raw_encr_file(file_path, std::ios::binary);
 
-    std::filesystem::path p = file_path;
+    std::ofstream decr_file(util::generate_out_path_decr(file_path));
 
-    std::ofstream encr_file(util::generate_out_path(file_path));
-
-
-    //file is empty??
-    if(!raw_file.is_open()){
+    if(!raw_encr_file.is_open()){
         std::cerr << "error occurred while opening file" << "\n";
         return;
     }
 
-    if(!encr_file.is_open()){
+    if(!decr_file.is_open()){
         std::cerr << "couldn't generate output folder" << "\n";
         return;
     }
@@ -46,18 +33,18 @@ AesDecryption::AesDecryption(std::string file_path, std::string user_key){
     //len(key)/4+6
     switch (length) {
         case 16:{
-            aes_version = 16;
+            aes_version = 128;
             num_rounds = 10;
             break;
         }
         case 24:{
-            aes_version = 24;
+            aes_version = 192;
             num_rounds = 12;
             break;
         }
 
         case 32:{
-            aes_version = 32;
+            aes_version = 256;
             num_rounds = 14;
             break;
         }
@@ -68,19 +55,131 @@ AesDecryption::AesDecryption(std::string file_path, std::string user_key){
         }
     }
 
+
     KeyScheduler key_scheduler(user_key, aes_version);
 
     std::vector<std::vector<uint8_t>> expanded_key = key_scheduler.get_expanded_key();
+    std::vector<std::vector<uint8_t>> decrypt_buffer(4);
 
     std::unordered_map<uint8_t, uint8_t> sub_map;
     //generate substitution table and substitute values of sbox with position values
+
     gen_sub_bytes(sub_map);
 
+    while(raw_encr_file.good()){//edit
+
+        //read block
+        char buff[util::CHBUF_SIZ];
+
+        raw_encr_file.read(buff, util::CHBUF_SIZ);
+
+        int bytes_read = raw_encr_file.gcount();
+
+        uint8_t state[4][4];
+        int ctr = 0;
+
+        while(ctr < bytes_read){
+            util::reset_state(state);
+
+            std::pair<int, int> row_col_pair;
+
+            int rem = bytes_read - ctr;
 
 
+            if(rem >= 16){//assumes padding / perfect alignment
+                char* beg = &buff[ctr];
+                char* end = &buff[ctr + 15];
+                ctr += 16;
+
+                row_col_pair = util::populate_state(state, beg, end, 16);
+            }
+
+
+
+             // start encryption
+            int round_ctr = 0;
+            int k_end_pos = (num_rounds * 4);//(final position) - 4;
+
+            for(int round = num_rounds; round >= 0; round--){
+
+                if(round == num_rounds){//first round
+                    inv_add_round_key(state, expanded_key, k_end_pos);
+                }else if(round > 0 && round < num_rounds){//middle rounds
+                    inv_shift_rows(state);
+                    inv_sub_bytes(state, sub_map);
+                    inv_add_round_key(state, expanded_key, k_end_pos);
+                    inv_mix_col(state);
+                }else{//last_round
+                    inv_shift_rows(state);
+                    inv_sub_bytes(state, sub_map);
+                    inv_add_round_key(state, expanded_key, k_end_pos);
+                }
+            }
+
+            if(state[3][3] == 0x00 || state[3][3] == 0x80){//might be padded
+
+                std::string content;
+                std::string p_content;
+
+                bool flag = false;
+                bool is_padded = true;
+
+
+                for(int col = 0; col < 4; col++){
+
+                    for(int row = 0; row < 4; row++){
+
+                        if(flag){
+                            if(state[row][col] != 0x00){
+                                is_padded = false;
+                            }
+                            p_content.push_back(state[row][col]);
+                        }else{
+                            if(state[row][col] == 0x80){
+                                flag = true;
+                                p_content.push_back(state[row][col]);
+                            }else{
+                                content.push_back(state[row][col]);
+                            }
+
+                        }
+
+
+                    }
+                }
+
+                util::flush_buffer(decrypt_buffer, decr_file);//premature flush
+
+                if(is_padded){
+                    decr_file << content;
+                }else{
+                    decr_file << content << p_content;
+                }
+                continue;
+            }
+
+            util::push_to_buffer(state, decrypt_buffer);
+
+
+            int buffer_size = decrypt_buffer.size() * decrypt_buffer[0].size();
+
+            if(buffer_size == util::CHBUF_SIZ){//flush buffer if full
+                util::flush_buffer(decrypt_buffer, decr_file);
+            }
+
+    }
+
+        //e at the end of file for some reason
+        if(!decrypt_buffer.empty()){
+            util::flush_buffer(decrypt_buffer, decr_file);//flush buffer one final time to clear reminants
+        }
 }
 
-void AesDecryption::inv_sub_bytes(char state[4][4], std::unordered_map<uint8_t, uint8_t> &sub_map){
+    raw_encr_file.close();
+    decr_file.close();
+}
+
+void AesDecryption::inv_sub_bytes(uint8_t state[4][4], std::unordered_map<uint8_t, uint8_t> &sub_map){
 
     for(int row = 0; row < 4; row++){
         for(int col = 0; col < 4; col++){
@@ -89,7 +188,7 @@ void AesDecryption::inv_sub_bytes(char state[4][4], std::unordered_map<uint8_t, 
     }
 }
 
-void AesDecryption::inv_shift_rows(char state[4][4]){
+void AesDecryption::inv_shift_rows(uint8_t state[4][4]){
     // row 1: 0;
     // row 2: 1;
     // row 3: 2;
@@ -112,27 +211,29 @@ void AesDecryption::inv_shift_rows(char state[4][4]){
 
 
     //inv shift r4
-    lst = state[3][3];
-    state[3][3] = state[3][0];
-    state[3][0] = lst;
+    uint8_t fst = state[3][0];
+    state[3][0] = state[3][1];
+    state[3][1] = state[3][2];
+    state[3][2] = state[3][3];
+    state[3][3] = fst;
 
 }
 
 //xor twice to retrieve original value
-void AesDecryption::inv_add_round_key(char state[4][4], const std::vector<std::vector<uint8_t>> &expanded_key, int &k_end_pos){
+void AesDecryption::inv_add_round_key(uint8_t state[4][4], const std::vector<std::vector<uint8_t>> &expanded_key, int &k_end_pos){
     for(int row = 0; row < 4; row++){
         for(int col = 0; col < 4; col++){
             state[row][col] = state[row][col] ^ expanded_key[row][k_end_pos + col];
         }
     }
 
-    k_end_pos--;//kp above 0
+    k_end_pos -= 4;
 }
 
 //sbox is 16x16
 void AesDecryption::gen_sub_bytes(std::unordered_map<uint8_t, uint8_t> &sub_map){
     for(int row = 0; row < 16; row++){
-        for(int col = 0; col < 16; row++){
+        for(int col = 0; col < 16; col++){
             uint8_t val = util::combine(row, col);
 
             sub_map[util::s_box[row][col]] = val;
@@ -140,68 +241,19 @@ void AesDecryption::gen_sub_bytes(std::unordered_map<uint8_t, uint8_t> &sub_map)
     }
 }
 
-uint8_t AesDecryption::inv_mix_col(uint8_t inv_val, uint8_t state_val){
-    //g(2^3) == 8
-        if(inv_val == 0x01){//multiplying by 1 nets you the same value
-            return state_val;
+void AesDecryption::inv_mix_col(uint8_t state[4][4]){
+    uint8_t mix_state[4][4] = {{0x00}};// holds state after mix_column op
+
+    for(int i = 0; i < 4; i++){
+        mix_state[0][i] = (util::g_mul(0x0E, state[0][i]) ^ util::g_mul(0x0B, state[1][i]) ^ util::g_mul(0x0D, state[2][i]) ^ util::g_mul(0x09 ,state[3][i]));
+        mix_state[1][i] = (util::g_mul(0x09, state[0][i]) ^ util::g_mul(0x0E, state[1][i]) ^ util::g_mul(0x0B, state[2][i]) ^ util::g_mul(0x0D, state[3][i]));
+        mix_state[2][i] = (util::g_mul(0x0D, state[0][i]) ^ util::g_mul(0x09, state[1][i]) ^ util::g_mul(0x0E, state[2][i]) ^ util::g_mul(0x0B, state[3][i]));
+        mix_state[3][i] = (util::g_mul(0x0B, state[0][i]) ^ util::g_mul(0x0D, state[1][i]) ^ util::g_mul(0x09, state[2][i]) ^ util::g_mul(0x0E, state[3][i]));
+    }
+
+    for(int row = 0; row < 4; row++){//return mix col result back to state
+        for(int col = 0; col < 4; col++){
+            state[row][col] = mix_state[row][col];
         }
-
-        std::vector<int> field_non_z;
-        std::vector<int> state_non_z;
-
-        std::uint8_t mask = 0x80; //10000000
-
-        //use mask to check if each bit is set in both values
-        for(int i = 7; i >= 0; i--){
-
-            uint8_t field_op = inv_val | mask;
-            uint8_t state_op = state_val | mask;
-
-            if(inv_val == field_op){
-                field_non_z.push_back(i);
-            }
-
-            if(state_val == state_op){
-                state_non_z.push_back(i);
-            }
-
-
-            mask = mask >> 1;//shift mask bit backwards
-        }
-
-
-        std::map<int, int> mul_val;//discard all keys with non one values/ cancel all values with duplicates out
-
-        //irreducible polynomial theorem for values greater than 7 (==8) after addition, reduce to: x^4 + x^3 + x + 1
-        //where these values  reflect the bit positions which are set
-
-        //multiply all values of field with values of state
-        for(int f_val : field_non_z){
-
-            for(int s_val : state_non_z){
-                int res = f_val + s_val;
-
-                if(res == 8){//irreducable polynomial theorem
-                    for(int i : poly_rs_8){
-                        mul_val[i]++;
-                    }
-                }else{
-                    mul_val[res]++;
-                }
-            }
-        }
-        //field_non_z * state_non_z;
-
-        uint8_t fin_val = 0x00;
-
-        for(const auto pair : mul_val){
-            uint8_t mask = 0x01;//00000001
-
-            if(pair.second % 2 != 0){//all with an even number of keys cross each other, odd keys have a reminant
-                mask = mask << pair.first;
-                fin_val = fin_val | mask;
-            }
-        }
-
-        return fin_val;
+    }
 }

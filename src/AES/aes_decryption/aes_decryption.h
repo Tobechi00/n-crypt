@@ -8,16 +8,15 @@
 #include <vector>
 class AesDecryption{
 
-    static const std::vector<std::vector<uint8_t>> inv_mix_col_mat;
-    static const std::vector<int> poly_rs_8;
-
-
+    public:
     AesDecryption(std::string file_path, std::string user_key);
 
-    void inv_sub_bytes(char state[4][4], std::unordered_map<uint8_t, uint8_t> &sub_map);
-    void inv_shift_rows(char state[4][4]);
-    uint8_t inv_mix_col(uint8_t inv_val, uint8_t state_val);
-    void inv_add_round_key(char state[4][4], const std::vector<std::vector<uint8_t>> &expanded_key, int &k_end_pos);
+    private:
+    void inv_sub_bytes(uint8_t state[4][4], std::unordered_map<uint8_t, uint8_t> &sub_map);
+    void inv_shift_rows(uint8_t state[4][4]);
+    void inv_add_round_key(uint8_t state[4][4], const std::vector<std::vector<uint8_t>> &expanded_key, int &k_end_pos);
+
+    void inv_mix_col(uint8_t state[4][4]);
     void gen_sub_bytes(std::unordered_map<uint8_t, uint8_t> &sub_map);
 };
 

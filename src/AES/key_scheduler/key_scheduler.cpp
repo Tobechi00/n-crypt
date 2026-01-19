@@ -9,77 +9,50 @@ KeyScheduler::KeyScheduler(std::string user_key, int aes_ver){
 
     this -> rcon_val = 0x01;
 
-    int key_size = aes_ver/4;
+    //arranged in column major order
+    //place original key
+    int ptr = 0;
+    for(int col = 0; col < 4; col++){
 
-    if(key_size <= 6){
-        //arranged in column major order
+        for(int row = 0; row < 4; row++){
 
-        int ptr = 0; //(do depending on size) on each round (like each round divisible by key size
-        //ie key 12 for aes 6 we perform all the core functions but for rounds that are not we just
-        // perform key xor key ie k7 = k6 xor k1)
-        // https://crypto.stackexchange.com/questions/51951/aes-key-expansion-for-192-bit
-
-        for(int col = 0; col < key_size; col++){
-
-            for(int row = 0; row < 4; row++){
-
-                expanded_key[row].push_back(user_key[ptr]);
-                ptr++;
-            }
+            expanded_key[row].push_back(static_cast<uint8_t>(user_key[ptr]));
+            ptr++;
         }
-
-        // adadadadadadadad
-        //stopped
-
-        int curr_num_col = key_size;
-        int req_num_col = 0;
-
-        if(key_size == 4){
-            req_num_col = 44;
-        }else{
-            req_num_col = 52;
-        }
+    }
 
 
-        while (curr_num_col < req_num_col) {
+    std::vector<uint8_t> r_const;
+
+    for(int m_col = 4; m_col < 44; m_col++){
+
+        if(m_col % 4 == 0){
+            gen_round_const(r_const);
 
             std::vector<uint8_t> last_col;
 
             //emplace last column in last_col
-            emplace(last_col, expanded_key, curr_num_col - 1);
+            emplace(last_col, expanded_key, m_col - 1);
 
 
             //rotate, substitute, apply round constant
             rot_word(last_col);
             sub_word(last_col);
-            op_rcon(last_col);
+            op_rcon(last_col, r_const);
 
-            int op_pos = curr_num_col - key_size;//inc forward depending on key size
 
-            for(int i = 0; i < key_size; i++){
-
-                for(int i = 0; i < 4; i++){
-                    last_col[i] = last_col[i] ^ expanded_key[i][op_pos];
-                }
-
-                op_pos++;
-
-                //push back operated value
-                for(int i = 0; i < 4; i++){
-                    expanded_key[i].push_back(last_col[i]);
-                }
-                curr_num_col++;
+            for(int row = 0; row < 4; row++){
+                expanded_key[row].push_back(last_col[row] ^ expanded_key[row][m_col - 4]);
             }
-
-
+        }else{
+            for(int row = 0; row < 4; row++){
+                expanded_key[row].push_back(expanded_key[row][m_col - 1] ^ expanded_key[row][m_col - 4]);
+            }
         }
-
-
-    }else{//256 differs apply subword every multiple of 4
-
     }
 }
 
+//shift once
 void KeyScheduler::rot_word(std::vector<uint8_t> &word){
     uint8_t temp = word[0];
     word[0] = word[1];
@@ -95,14 +68,29 @@ void KeyScheduler::sub_word(std::vector<uint8_t> &word){
     }
 }
 
-void KeyScheduler::op_rcon(std::vector<uint8_t> &word){
-    word[0] *= this -> rcon_val;
-    if((this -> rcon_val >= 1) && (this -> rcon_val < 0x80)){//2 . RC
-        this -> rcon_val *= 2;
-    }else if(this -> rcon_val >= 0x80){//(2 . RC) ^ 0X11B
-        this -> rcon_val = (this -> rcon_val * 2) ^ 0x11B;
+//first r constant already added generate off first
+//storing all round constants, not needed but ill leave it for now
+void KeyScheduler::gen_round_const(std::vector<uint8_t> &r_const){
+
+    if(r_const.empty()){
+        r_const = {0x01, 0x00, 0x00, 0x00};
+    }else{
+        std::vector<uint8_t> next = {0x00, 0x00, 0x00, 0x00};
+
+        next[0] = util::g_mul(r_const[0], 2);
+        r_const = next;
     }
 }
+
+void KeyScheduler::op_rcon(std::vector<uint8_t> &word, std::vector<uint8_t> &r_const){
+    for(int i = 0; i < word.size(); i++){
+        word[i] = word[i] ^ r_const[i];
+    }
+}
+
+
+
+
 
 std::vector<std::vector<uint8_t>> &KeyScheduler::get_expanded_key(){
     return this -> expanded_key;

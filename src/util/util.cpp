@@ -28,6 +28,8 @@ namespace util{
         {0x8c, 0xa1, 0x89, 0x0d, 0xbf, 0xe6, 0x42, 0x68, 0x41, 0x99, 0x2d, 0x0f, 0xb0, 0x54, 0xbb, 0x16}
     };
 
+    const std::vector<uint8_t> r_constants = {};
+
     std::pair<uint8_t, uint8_t> separate(uint8_t val){
         int upper_nibble = static_cast<int>((val & 0xF0) >> 4);
         int lower_nibble = static_cast<int>(val & 0x0F);
@@ -53,6 +55,13 @@ namespace util{
         return fp;
     }
 
+    std::filesystem::path generate_out_path_decr(std::string in_file_path){
+        std::filesystem::path fp = in_file_path;
+        fp.replace_extension("");
+
+        return fp;
+    }
+
     void flush_buffer(std::vector<std::vector<uint8_t>> &buffer, std::ofstream &file){
         //read in column major order but arrange each from top to bottom
         std::string content;
@@ -72,6 +81,72 @@ namespace util{
 
     uint8_t combine(uint8_t row, uint8_t col){
         return (row << 4) | col;
+    }
+
+    void reset_state(uint8_t state[4][4]){
+        for(int row = 0; row < 4; row++){
+            for(int col = 0; col < 4; col++){
+                state[row][col] = 0x00;
+            }
+        }
+    }
+
+    std::pair<int, int> populate_state(uint8_t state[4][4], char *begin, char *end, int bytes_read){
+
+        int last_col = 0;
+        int last_row = 0;
+        bool flag = false;
+
+        for(int col = 0; col < 4; col++){
+            for(int row = 0; row < 4; row++){
+
+                if (flag == true) {
+                    last_col = col;
+                    last_row = row;
+                    break;
+                }
+
+
+                if(begin == end){//save stop position
+                    flag = true;
+                }
+
+                state[row][col] = static_cast<uint8_t>(*begin);
+
+                begin++;
+            }
+        }
+
+        return {last_row, last_col};
+    }
+
+    void push_to_buffer(uint8_t state[4][4], std::vector<std::vector<uint8_t>> &buffer){
+        for(int col = 0; col < 4; col++){
+
+            for(int row = 0; row < 4; row++){
+                buffer[row].push_back(state[row][col]);
+            }
+        }
+    }
+
+    uint8_t g_mul(uint8_t a, uint8_t b){
+        uint8_t result = 0;
+
+        for(int i = 0; i < 8; i++){
+
+            if ((b & 1) != 0){
+                result ^= a;
+            }
+
+            bool hi_bit_set = ((a & 0x80) != 0);
+            a <<= 1;
+            if (hi_bit_set){
+                a ^= 0x1B; // x^8 + x^4 + x^3 + x + 1
+            }
+            b >>= 1;
+        }
+
+        return result;
     }
 
 
