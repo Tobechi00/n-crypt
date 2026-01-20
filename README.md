@@ -1,5 +1,5 @@
 # N-crypt
-N-crypt is a file encryption tool based on the AES (Advanced Encryption Standard) AKA Rijndael, Implemented from scratch in C++.
+N-crypt is a file encryption tool based on the AES (Advanced Encryption Standard) which is a variant of the Rijndael block cipher, Implemented from scratch in C++.
 
 ## How it Works:
 N-crypt makes use of the AES, which is a block cypher, it operates on files, blocks at a time
