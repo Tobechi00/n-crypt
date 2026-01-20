@@ -110,13 +110,13 @@ cmake --build .
 ```
 
 # n-crypt commands:
-to compress run:
+to encrypt run:
 ```
 ./ncrypt -e "file path"
 ```
 or
 ```
-./kompressor --encrypt "file path"
+./ncrypt --encrypt "file path"
 ```
 and put in a 128 bit key when prompted for a ```security key```
 
@@ -129,7 +129,7 @@ or
 ```
 ./ncrypt --decrypt "file path"
 ```
-and put the same 128bit security key used to encrypt the document.
+and put the same 128bit security key used to encrypt the file.
 
 
 Note: This project is still being worked on and I plan to add support for aes 192 and 256 in the future ;)
