@@ -37,17 +37,6 @@ AesDecryption::AesDecryption(std::string file_path, std::string user_key){
             num_rounds = 10;
             break;
         }
-        case 24:{
-            aes_version = 192;
-            num_rounds = 12;
-            break;
-        }
-
-        case 32:{
-            aes_version = 256;
-            num_rounds = 14;
-            break;
-        }
 
         default:{
             std::cerr << "invalid key length" << "\n";

@@ -21,6 +21,7 @@ class AesEncryption{
 
     void sub_bytes(uint8_t state[4][4]);
 
+    //ISO/IEC 7816-4
     void pad_iso(uint8_t state[4][4], int last_row_pos, int last_col_pos);
 
 };

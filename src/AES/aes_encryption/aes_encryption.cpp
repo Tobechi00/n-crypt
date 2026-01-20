@@ -11,7 +11,7 @@
 //r1 - initial round key addition //first key is unedited the users pure secret key
 //r9, 11 or 13 - subbytes, shift rows, mix columns add round key
 //rfinal - subbytes shitrows addround key
-//sample key: mNpQ2zR8xV4kL7aB9jY5sT1w
+//sample key: p7K9mR2vX4wQ8zN1
 
 AesEncryption::AesEncryption(std::string file_path, std::string user_key){
     std::ifstream raw_file(file_path, std::ios::binary);
@@ -41,17 +41,6 @@ AesEncryption::AesEncryption(std::string file_path, std::string user_key){
         case 16:{
             aes_version = 128;
             num_rounds = 10;
-            break;
-        }
-        case 24:{
-            aes_version = 192;
-            num_rounds = 12;
-            break;
-        }
-
-        case 32:{
-            aes_version = 256;
-            num_rounds = 14;
             break;
         }
 
